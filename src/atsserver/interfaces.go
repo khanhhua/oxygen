@@ -18,6 +18,6 @@ type CandidateService interface {
 }
 
 type PositionService interface {
-	GetTemplate() *Position
-	Create(Position) bool
+	GetTemplate() Position
+	Create(*Position) bool
 }
