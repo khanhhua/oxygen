@@ -12,6 +12,11 @@ type Position struct {
 	Salary int
 }
 
+type PositionQuery struct {
+	query map[string]string
+	limit int
+}
+
 type CandidateService interface {
 	GetTemplate() *Candidate
 	Register(Candidate) bool
@@ -20,4 +25,5 @@ type CandidateService interface {
 type PositionService interface {
 	GetTemplate() Position
 	Create(*Position) bool
+	Find(PositionQuery) []*Position
 }
