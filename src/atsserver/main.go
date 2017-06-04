@@ -13,10 +13,10 @@ import (
 func CreateServer(clientDelegate ClientDelegate) Server {
 	fmt.Println("Creating ATS Server...")
 
-	cs := CandidateServiceImpl{}
-	ps := PositionServiceImpl{}
+	cs := CandidateServiceImpl{nextID: 1}
+	ps := PositionServiceImpl{nextID: 1}
 
-	s := Server{CandidateService: cs, PositionService: &ps, clientDelegate: clientDelegate}
+	s := Server{CandidateService: &cs, PositionService: &ps, clientDelegate: clientDelegate}
 
 	return s
 }
@@ -26,11 +26,12 @@ const (
 	ScreenMainMenu int = iota
 	ScreenSearchPositions
 	ScreenPostPosition
+	ScreenApplyForPosition
 )
 
 // Server ATS server
 type Server struct {
-	CandidateService CandidateService
+	CandidateService *CandidateServiceImpl
 	PositionService  PositionService
 	clientDelegate   ClientDelegate
 }
@@ -55,15 +56,20 @@ func (c Client) Receive() string {
 	return s
 }
 
+// Quit Quit
+func (c Client) Quit() {
+
+}
+
 // CreatePosition CreatePosition
 func (c Client) CreatePosition(name string, salary int) bool {
-	server := c.server
+	ps := c.server.PositionService
 
-	position := server.PositionService.GetTemplate()
+	position := ps.GetTemplate()
 	position.Name = name
 	position.Salary = salary
 
-	return server.PositionService.Create(&position)
+	return ps.Create(&position)
 }
 
 // SearchPositions SearchPositions
@@ -72,6 +78,47 @@ func (c Client) SearchPositions(query map[string]string) []*Position {
 
 	positionQuery := PositionQuery{query, 10}
 	result := server.PositionService.Find(positionQuery)
+
+	return result
+}
+
+// ApplyPosition ApplyPosition
+func (c Client) ApplyPosition(positionId int, applicantName string, applicantYob int) bool {
+	cs := c.server.CandidateService
+
+	fmt.Println("==================================")
+	fmt.Println("Current candidates")
+	fmt.Println("----------------------------------")
+	for _, c := range cs.candidates {
+		fmt.Printf("%d. %s\t\t%d\n", c.Id, c.Name, c.Yob)
+		fmt.Printf("\t\tPositions: %v\n", c.PositionIds)
+	}
+	fmt.Println("==================================")
+
+	candidate := cs.findByNameAndYob(applicantName, applicantYob)
+
+	var result bool
+
+	if candidate != nil {
+		candidate.PositionIds = append(candidate.PositionIds, positionId)
+		result = true
+	} else {
+		template := cs.GetTemplate()
+		template.Name = applicantName
+		template.Yob = applicantYob
+		template.PositionIds = []int{positionId}
+
+		result = cs.Register(&template)
+	}
+
+	fmt.Println("==================================")
+	fmt.Println("Updates candidates")
+	fmt.Println("----------------------------------")
+	for _, c := range cs.candidates {
+		fmt.Printf("%d. %s\t\t%d\n", c.Id, c.Name, c.Yob)
+		fmt.Printf("\t\tPositions: %v\n", c.PositionIds)
+	}
+	fmt.Println("==================================")
 
 	return result
 }
@@ -109,6 +156,7 @@ func (s Server) handleConnection(conn net.Conn) {
 	go func(out <-chan string) {
 		for {
 			userOutput := <-out
+
 			fmt.Println("Replying to client...")
 			conn.Write([]byte(userOutput))
 		}
@@ -131,13 +179,13 @@ func (s Server) handleConnection(conn net.Conn) {
 		if userInput == "X" {
 			fmt.Println("WARNING: Client quit")
 			conn.Close()
+
+			return
 		}
 
 		in <- userInput
 	}
 
-	close(in)
-	close(out)
 	conn.Close()
 	return
 }
@@ -146,25 +194,48 @@ func (s Server) handleConnection(conn net.Conn) {
 type ClientDelegate func(Client)
 
 // CandidateServiceImpl Implementation of CandidateService interface
-type CandidateServiceImpl struct{}
+type CandidateServiceImpl struct {
+	CandidateService,
+	candidates []*Candidate
+	nextID int
+}
 
 // GetTemplate Implement CandidateService:GetTemplate
-func (cs CandidateServiceImpl) GetTemplate() *Candidate {
-	template := Candidate{Name: "Default", Yob: 2000, Id: 0}
+func (cs *CandidateServiceImpl) GetTemplate() Candidate {
+	template := Candidate{Name: "Default", Yob: 2000, Id: 0, PositionIds: make([]int, 0)}
 
-	return &template
+	return template
 }
 
 // Register Implement CandidateService:Register
-func (cs CandidateServiceImpl) Register(Candidate) bool {
+func (cs *CandidateServiceImpl) Register(c *Candidate) bool {
 	fmt.Println("CandidateServiceImpl.register(Candidate)")
 
+	c.Id = cs.getNextID()
+	cs.candidates = append(cs.candidates, c)
+	cs.nextID++
+
 	return true
+}
+
+func (cs *CandidateServiceImpl) getNextID() int {
+	return cs.nextID
+}
+
+func (cs *CandidateServiceImpl) findByNameAndYob(name string, yob int) *Candidate {
+	for _, candidate := range cs.candidates {
+		if strings.EqualFold(candidate.Name, name) && (candidate.Yob == yob) {
+			return candidate
+		}
+	}
+
+	return nil
 }
 
 // PositionServiceImpl Implementation of PositionService
 type PositionServiceImpl struct {
 	positions []*Position
+	nextID    int
 }
 
 // GetTemplate Implement PositionService:PositionService
@@ -181,18 +252,20 @@ func (ps *PositionServiceImpl) Create(p *Position) bool {
 	fmt.Println("==================================")
 	fmt.Println("Current positions")
 	fmt.Println("----------------------------------")
-	for i := 0; i < len(ps.positions); i++ {
-		fmt.Printf("%d. %s\t\t%d\n", i+1, ps.positions[i].Name, ps.positions[i].Salary)
+	for _, position := range ps.positions {
+		fmt.Printf("%d. %s\t\t%d\n", position.Id, position.Name, position.Salary)
 	}
 	fmt.Println("==================================")
 
+	p.Id = ps.getNextID()
 	ps.positions = append(ps.positions, p)
+	ps.nextID++
 
 	fmt.Println("==================================")
 	fmt.Println("New positions")
 	fmt.Println("----------------------------------")
-	for i := 0; i < len(ps.positions); i++ {
-		fmt.Printf("%d. %s\t\t%d\n", i+1, ps.positions[i].Name, ps.positions[i].Salary)
+	for _, position := range ps.positions {
+		fmt.Printf("%d. %s\t\t%d\n", position.Id, position.Name, position.Salary)
 	}
 	fmt.Println("==================================")
 
@@ -217,4 +290,8 @@ func (ps *PositionServiceImpl) Find(query PositionQuery) []*Position {
 	}
 
 	return result
+}
+
+func (ps *PositionServiceImpl) getNextID() int {
+	return ps.nextID
 }
