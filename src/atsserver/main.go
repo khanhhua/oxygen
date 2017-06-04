@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 )
 
 // CreateServer Create an instance of ATS server which can bind to a tcp/ip ports
@@ -14,7 +16,7 @@ func CreateServer(clientDelegate ClientDelegate) Server {
 	cs := CandidateServiceImpl{}
 	ps := PositionServiceImpl{}
 
-	s := Server{CandidateService: cs, PositionService: ps, clientDelegate: clientDelegate}
+	s := Server{CandidateService: cs, PositionService: &ps, clientDelegate: clientDelegate}
 
 	return s
 }
@@ -62,6 +64,16 @@ func (c Client) CreatePosition(name string, salary int) bool {
 	position.Salary = salary
 
 	return server.PositionService.Create(&position)
+}
+
+// SearchPositions SearchPositions
+func (c Client) SearchPositions(query map[string]string) []*Position {
+	server := c.server
+
+	positionQuery := PositionQuery{query, 10}
+	result := server.PositionService.Find(positionQuery)
+
+	return result
 }
 
 // Bind Allow ATS to bind to a tcp/ip port
@@ -156,17 +168,15 @@ type PositionServiceImpl struct {
 }
 
 // GetTemplate Implement PositionService:PositionService
-func (ps PositionServiceImpl) GetTemplate() Position {
+func (ps *PositionServiceImpl) GetTemplate() Position {
 	template := Position{Name: "Default", Salary: 20000, Id: 0}
 
 	return template
 }
 
 // Create Implement PositionService:Create
-func (ps PositionServiceImpl) Create(p *Position) bool {
+func (ps *PositionServiceImpl) Create(p *Position) bool {
 	fmt.Println("PositionServiceImpl.create(Position)")
-
-	ps.positions = append(ps.positions, p)
 
 	fmt.Println("==================================")
 	fmt.Println("Current positions")
@@ -176,5 +186,35 @@ func (ps PositionServiceImpl) Create(p *Position) bool {
 	}
 	fmt.Println("==================================")
 
+	ps.positions = append(ps.positions, p)
+
+	fmt.Println("==================================")
+	fmt.Println("New positions")
+	fmt.Println("----------------------------------")
+	for i := 0; i < len(ps.positions); i++ {
+		fmt.Printf("%d. %s\t\t%d\n", i+1, ps.positions[i].Name, ps.positions[i].Salary)
+	}
+	fmt.Println("==================================")
+
 	return true
+}
+
+// Find Find
+func (ps *PositionServiceImpl) Find(query PositionQuery) []*Position {
+	var result = make([]*Position, 0)
+
+	iMinSalary, error := strconv.Atoi(query.query["minSalary"])
+	if error != nil {
+		return result
+	}
+
+	positionName := query.query["positionName"]
+
+	for _, item := range ps.positions {
+		if (item.Salary >= iMinSalary) && (strings.Index(item.Name, positionName) == 0) {
+			result = append(result, item)
+		}
+	}
+
+	return result
 }

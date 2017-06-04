@@ -32,9 +32,35 @@ func clientDelegate(client server.Client) {
 			userChoice := client.Receive()
 			fmt.Println("clientDelegate: You chose:", userChoice)
 
-			if userChoice == "2" {
+			switch userChoice {
+			case "1":
+				client.Screen = server.ScreenSearchPositions
+			case "2":
 				client.Screen = server.ScreenPostPosition
 			}
+		} else if client.Screen == server.ScreenSearchPositions {
+			client.Send("Min salary: ")
+			minSalary := client.Receive()
+			client.Send("Position name: ")
+			positionName := client.Receive()
+
+			fmt.Println("Preparing to search for positions")
+			query := make(map[string]string)
+			query["minSalary"] = minSalary
+			query["positionName"] = positionName
+
+			positions := client.SearchPositions(query)
+
+			client.Send("==================================\n")
+			client.Send("Positions found\n")
+			client.Send("----------------------------------\n")
+
+			for i := 0; i < len(positions); i++ {
+				client.Send(fmt.Sprintf("%d. %s\t\t%d\n", i+1, positions[i].Name, positions[i].Salary))
+			}
+			client.Send("----------------------------------\n\n")
+
+			client.Screen = server.ScreenMainMenu
 		} else if client.Screen == server.ScreenPostPosition {
 			client.Send("Position name: ")
 			positionName := client.Receive()
@@ -48,6 +74,7 @@ func clientDelegate(client server.Client) {
 			if result == true {
 				client.Send("A new position has been created\n")
 			}
+			client.Send("\n\n")
 
 			client.Screen = server.ScreenMainMenu
 		}
@@ -71,6 +98,13 @@ func ui(screen int) string {
 X. Quit
 
 Your choice:`
+	case server.ScreenSearchPositions:
+		return `ATS Applicant Tracking System
+-----------------------------
+1. Search for positions
+=============================
+Specify your criteria...
+`
 	case server.ScreenPostPosition:
 		return `ATS Applicant Tracking System
 -----------------------------
